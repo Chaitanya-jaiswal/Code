@@ -1,2 +1,2 @@
 # Code
-This repo is used for the code of the project
+This repo is used for project's code
