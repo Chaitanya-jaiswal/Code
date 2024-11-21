@@ -7,4 +7,4 @@ edition = "2021"
 crossbeam-channel = "0.5.13"
 toml = "0.8.19"
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize"] }
-game_of_drones = {git = "https://github.com/AP-Game-Of-Drones/Code/game_of_drones.git" }
+game_of_drones = {path = /home/stefano/Desktop/GoD/Code/game_of_drones }
