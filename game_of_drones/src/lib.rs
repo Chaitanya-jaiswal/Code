@@ -1,4 +1,5 @@
 use std::thread::{self, spawn, JoinHandle};
+use std::time::TryFromFloatSecsError;
 use std::{collections::HashMap, hash::Hash};
 use crossbeam_channel::{Sender,Receiver,select, unbounded};
 use wg_2024::config::Config;
@@ -71,12 +72,20 @@ impl GameOfDrones {
         vec
     }
 
-    pub fn forward_packet(&self,packet: Packet,rec_id: NodeId/* other data?? */)->bool{  
-        unimplemented!()
+    pub fn forward_packet(&self,packet: Packet,rec_id: NodeId/* other data?? */)->bool{
+        if let Some(sender) = self.packet_send.get_key_value(&rec_id){
+            sender.1.send(packet);
+            return true;
+        }
+        false
     }
 
     pub fn show_data(&self){  //show own data + neighbours + packet status in own comms channel ??
-        unimplemented!()
+        if self.packet_recv.recv().is_ok(){
+            println!("OK");
+        } else {
+            println!("ERR");
+        }
     }
 
     pub fn release_channels(&self){
@@ -134,6 +143,8 @@ pub fn populate_channels(){
         let id: NodeId = drone.id.try_into().unwrap();
         let pdr = drone.pdr as f32;
 
+
+
         join_handles.push(thread::spawn(move || {
             let mut drone = GameOfDrones::new(DroneOptions {
                 id,
@@ -146,6 +157,8 @@ pub fn populate_channels(){
 
             drone.run();
         }));
+
+
     }
 
     // here you'd create your simulation controller and also pass all the channels to it
@@ -153,3 +166,5 @@ pub fn populate_channels(){
     // joining behaviour needs to be refined
     join_handles[0].join().ok();
 }
+
+
