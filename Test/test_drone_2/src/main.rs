@@ -12,6 +12,7 @@ use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
+use drone_tester::*;
 
 ///Beware thy who enter: Highly repetitive code 
 
@@ -43,6 +44,7 @@ fn parse_config(file: &str) -> Config {
     let file_str = fs::read_to_string(file).unwrap();
     toml::from_str(&file_str).unwrap()
 }
+
 
 fn main() {
 
@@ -664,6 +666,8 @@ fn crash(){
         handle.join().unwrap();
     }
 }
+
+
 
 fn nack_receiving_main(){
 

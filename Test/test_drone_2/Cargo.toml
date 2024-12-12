@@ -8,3 +8,4 @@ wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["
 toml = "0.8.15"
 crossbeam-channel = "0.5.13"
 game_of_drones = { path = "/home/stefano/Desktop/GoD/GoD_Library/game_of_drones"}
+drone_tester = { git = "https://github.com/daw-dev/drone-tester.git" }
