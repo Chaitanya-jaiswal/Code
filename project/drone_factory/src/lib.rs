@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use toml::{self};
 use wg_2024::{
@@ -125,23 +125,6 @@ fn check_initializer(path_to_file: &str) -> bool {
 }
 
 
-
-
-// fn build_on_impls<T:Drone>(impls: DroneFactory){
-//     match impls{
-//         DroneFactory::BagelBomber=>{},
-//         DroneFactory::BetterCallDrone=>{},
-//         DroneFactory::CppEnjoyers=>{},
-//         DroneFactory::DRONE=>{},
-//         DroneFactory::DrOnes=>{},
-//         DroneFactory::GetDroned=>{},
-//         DroneFactory::NullPointerPatrol=>{},
-//         DroneFactory::RustEze=>{},
-//         DroneFactory::RustRoveri=>{},
-//         DroneFactory::Rustafarian=>{}
-//     }
-// }
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -189,6 +172,7 @@ mod test {
 struct Node {
     value: NodeId,
     node_type: NodeType, 
+    // pdr: f32, //only if the type is drone.
     pub adjacents: Vec<(NodeId,NodeType)>,
 }
 
@@ -243,9 +227,114 @@ impl Topology {
         }
     }
 
+    pub fn shortest_path(&self, src: NodeId, dst: NodeId) -> Option<Vec<NodeId>> {
+        let mut visited = HashMap::new();
+        let mut queue = VecDeque::new();
+        let mut predecessors = HashMap::new();
+
+        // Initialize BFS
+        visited.insert(src, true);
+        queue.push_back(src);
+
+        while let Some(current) = queue.pop_front() {
+            if current == dst {
+                // Reconstruct the path
+                let mut path = Vec::new();
+                let mut node = dst;
+                while let Some(&pred) = predecessors.get(&node) {
+                    path.push(node);
+                    node = pred;
+                }
+                path.push(src);
+                path.reverse();
+                return Some(path);
+            }
+
+            // Explore neighbors
+            if let Some(node) = self.nodes.get(&current) {
+                for &(neighbor, _) in &node.adjacents {
+                    if !visited.contains_key(&neighbor) {
+                        visited.insert(neighbor, true);
+                        predecessors.insert(neighbor, current);
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        // If we reach here, no path was found
+        None
+    }
 
 
+    pub fn all_shortest_paths(&self, src: NodeId, dst: NodeId) -> Vec<Vec<NodeId>> {
+        let mut visited = HashMap::new();
+        let mut queue = VecDeque::new();
+        let mut predecessors = HashMap::new();
+        let mut distances = HashMap::new();
+
+        // Initialize BFS
+        visited.insert(src, true);
+        queue.push_back(src);
+        distances.insert(src, 0);
+
+        while let Some(current) = queue.pop_front() {
+            if let Some(node) = self.nodes.get(&current) {
+                for &(neighbor, _) in &node.adjacents {
+                    // If the neighbor hasn't been visited or is at the same distance as the shortest path
+                    let current_distance = distances[&current] + 1;
+                    if !distances.contains_key(&neighbor) {
+                        distances.insert(neighbor, current_distance);
+                        queue.push_back(neighbor);
+                    }
+
+                    if distances[&neighbor] == current_distance {
+                        predecessors
+                            .entry(neighbor)
+                            .or_insert_with(Vec::new)
+                            .push(current);
+                    }
+                }
+            }
+        }
+
+        // Reconstruct all paths from src to dst
+        let mut paths = Vec::new();
+        if distances.get(&dst).is_some() {
+            let mut path = Vec::new();
+            self.reconstruct_paths(&predecessors, &mut paths, &mut path, src, dst);
+        }
+
+        paths
+    }
+
+    /// Helper function to reconstruct all paths using DFS
+    fn reconstruct_paths(
+        &self,
+        predecessors: &HashMap<NodeId, Vec<NodeId>>,
+        paths: &mut Vec<Vec<NodeId>>,
+        path: &mut Vec<NodeId>,
+        src: NodeId,
+        current: NodeId,
+    ) {
+        path.push(current);
+
+        if current == src {
+            let mut complete_path = path.clone();
+            complete_path.reverse();
+            paths.push(complete_path);
+        } else if let Some(preds) = predecessors.get(&current) {
+            for &pred in preds {
+                self.reconstruct_paths(predecessors, paths, path, src, pred);
+            }
+        }
+
+        path.pop();
+    }
 }
+
+
+
 
 
 #[cfg(test)]
@@ -283,5 +372,10 @@ mod testq {
             }
         }
 
+        let paths = top.all_shortest_paths(0, 4);
+
+        println!("{:?}",paths);
+        assert_eq!([[1,2,3].to_vec()].to_vec(),paths);
     }
 }
+

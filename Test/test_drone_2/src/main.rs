@@ -2,6 +2,8 @@
 
 use crossbeam_channel::{select_biased, unbounded, Receiver, Sender};
 use game_of_drones::GameOfDrones;
+use getdroned::GetDroned;
+use rust_roveri::RustRoveri;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -14,6 +16,7 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::*;
 use drone_tester::*;
 
+
 ///Beware thy who enter: Highly repetitive code 
 
 struct SimulationController {
@@ -24,16 +27,29 @@ struct SimulationController {
 
 impl SimulationController {
     fn crash_all(&mut self, id: u8) {
-        if let Some(res) = self.drones.get_key_value(&id) {
-            for s in self.droness.get(&id) {
-                for ss in s {
-                    self.drones
-                        .get(ss)
-                        .unwrap()
-                        .send(DroneCommand::RemoveSender(id));
+        if let Some(res) = self.drones.get(&id) {
+            match res.send(DroneCommand::Crash) {
+                Ok(_)=>{
+                    println!("Crashead");
+                },
+                Err(_)=>{
+                    println!("Crashead");
                 }
             }
-            self.drones.get(&id).unwrap().send(DroneCommand::Crash);
+            for s in self.droness.get(&id).unwrap() {
+                match self.drones
+                    .get(s)
+                    .unwrap()
+                    .send(DroneCommand::RemoveSender(id)) 
+                {
+                    Ok(p)=>{
+                        println!("Sent remove_id to {}",s);
+                    },
+                    Err(_e)=>{
+                        println!("remove_id to {} error",s);
+                    }
+                }
+            }
         } else {
             println!("Drone does not exist");
         }
@@ -45,16 +61,13 @@ fn parse_config(file: &str) -> Config {
     toml::from_str(&file_str).unwrap()
 }
 
-
 fn main() {
 
-    //flood_main();
-
+    // flood_main();
     //modify the routing for different behaviors;
-
     //nack_receiving_main();
-    //msg_main();
-    // crash();
+    // msg_main();
+    crash();
 }
 
 #[derive(Clone)]
@@ -234,6 +247,88 @@ impl Server {
 }
 
 
+enum impl_count
+{
+    BagelBomber(u8),
+    Rustafarian(u8),
+    DrOnes(u8),
+    RustEze(u8),
+    DRONE(u8),
+    GetDroned(u8),
+    NullPointerPatrol(u8),
+    BetterCallDrone(u8),
+    RustRoveri(u8),
+    CppEnjoyers(u8),
+}
+
+fn build<T>(
+    id: NodeId,
+    command_recv: crossbeam_channel::Receiver<DroneCommand>,
+    command_send: crossbeam_channel::Sender<DroneEvent>,
+    packet_recv: crossbeam_channel::Receiver<Packet>,
+    packet_send: HashMap<NodeId, crossbeam_channel::Sender<Packet>>,
+    pdr: f32,
+) -> T 
+where T: Drone{
+    T::new(
+        id,
+        command_send,
+        command_recv,
+        packet_recv,
+        packet_send,
+        pdr,
+    )
+}
+
+
+// fn build_on_impls<T:Drone>(impls: &mut impl_count)->T{
+//     match impls{
+//         impl_count::BagelBomber(count)=>{
+//             count+=1;
+//             return build<bagel_bomber::BagelBomber>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::DRONE(count)=>{
+//             count+=1;
+//             return build<d_r_o_n_e_drone::MyDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::GetDroned(count)=>{
+//             count+=1;
+//             return build<getdroned::GetDroned>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::BetterCallDrone(count)=>{
+//             count+=1;
+//             return build<drone_bettercalldrone::BetterCallDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::RustEze(count)=>{
+//             count+=1;
+//             return build<rusteze_drone::RustezeDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::RustRoveri(count)=>{
+//             count+=1;
+//             return build<rust_roveri::RustRoveri>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::Rustafarian(count)=>{
+//             count+=1;
+//             return build<rustafarian_drone::RustafarianDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::CppEnjoyers(count)=>{
+//             count+=1;
+//             return build<ap2024_unitn_cppenjoyers_drone::CppEnjoyersDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::NullPointerPatrol(count)=>{
+//             count+=1;
+//             return build<null_pointer_drone::MyDrone>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//         impl_count::DrOnes(count)=>{
+//             count+=1;
+//             return build<GameOfDrones>(id, command_recv, command_send, packet_recv, packet_send, pdr)
+//         },
+//     }
+// }
+
+
+
+
 fn flood_main() {
 
     let config = parse_config("config.toml");
@@ -272,7 +367,7 @@ fn flood_main() {
             .collect();
         dd.insert(drone.id, drone.connected_node_ids.clone());
         handles.push(thread::spawn(move || {
-            let mut drone = GameOfDrones::new(
+            let mut drone = rust_roveri::RustRoveri::new(
                 drone.id,
                 node_event_send,
                 controller_drone_recv,
@@ -280,9 +375,9 @@ fn flood_main() {
                 packet_send,
                 drone.pdr,
             );
-            println!("{}  {:?}", drone.id, drone.packet_send.clone());
+            // println!("{}  {:?}", drone.id, drone.packet_send.clone());
 
-            drone.run();
+            wg_2024::drone::Drone::run(&mut drone);
         }));
     }
 
@@ -355,7 +450,7 @@ fn flood_main() {
                             pack_type: PacketType::FloodRequest(FloodRequest {
                                 flood_id: 1,
                                 initiator_id: cc.id,
-                                path_trace: [].to_vec(),
+                                path_trace: [(5,NodeType::Client)].to_vec(),
                             }),
                             routing_header: SourceRoutingHeader {
                                 hop_index: 1,
@@ -420,7 +515,7 @@ fn msg_main(){
             .collect();
         dd.insert(drone.id, drone.connected_node_ids.clone());
         handles.push(thread::spawn(move || {
-            let mut drone = GameOfDrones::new(
+            let mut drone = rust_roveri::RustRoveri::new(
                 drone.id,
                 node_event_send,
                 controller_drone_recv,
@@ -428,9 +523,7 @@ fn msg_main(){
                 packet_send,
                 drone.pdr,
             );
-            println!("{}  {:?}", drone.id, drone.packet_send.clone());
-
-            drone.run();
+            wg_2024::drone::Drone::run(&mut drone);
         }));
     }
 
@@ -502,7 +595,7 @@ fn msg_main(){
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: [5, 1, 2, 4,6].to_vec(),
+            hops: [5, 1, 2, 6].to_vec(),
         },
         session_id: 1,
     };
@@ -515,8 +608,8 @@ fn msg_main(){
                     if cc.id == 5{
                         cc.packet_send.get(&1).unwrap().send(res);
                         println!("Waiting to receive");
-                        thread::sleep(Duration::from_secs(3));
-                        println!("Trying to receive");
+                        // thread::sleep(Duration::from_secs(3));
+                        // println!("Trying to receive");
                         cc.run();
                     } else {
                     }
@@ -572,7 +665,7 @@ fn crash(){
             .collect();
         dd.insert(drone.id, drone.connected_node_ids.clone());
         handles.push(thread::spawn(move || {
-            let mut drone = GameOfDrones::new(
+            let mut drone = rust_roveri::RustRoveri::new(
                 drone.id,
                 node_event_send,
                 controller_drone_recv,
@@ -580,9 +673,8 @@ fn crash(){
                 packet_send,
                 drone.pdr,
             );
-            println!("{}  {:?}", drone.id, drone.packet_send.clone());
 
-            drone.run();
+            wg_2024::drone::Drone::run(&mut drone);
         }));
     }
 
@@ -646,19 +738,31 @@ fn crash(){
         node_event_recv,
     };
 
-    let mut packet = Packet::new_ack(SourceRoutingHeader::with_first_hop([5,1,3,4,6].to_vec()),1,0);
-
+    let mut packet = Packet::new_ack(SourceRoutingHeader::with_first_hop([5,1,3,6].to_vec()),1,0);
+    println!("{:?}",c[0].packet_send);
     c[0].packet_send.get(&1).unwrap().send(packet.clone()).ok();
+    println!("AP");
     thread::sleep(Duration::from_secs(2));
     controller.crash_all(3);
     thread::sleep(Duration::from_secs(2));
-
+    println!("AP");
+    
+    if c[0].packet_send.get(&1).unwrap().is_empty() {
+        println!("Why the fuck you don't send anything then?");
+    }
+     
     c[0].packet_send.get(&1).unwrap().send(packet.clone()).ok();
+    println!("AP");
+    // while !controller.node_event_recv.is_empty() {
+    //     println!("{:?}",controller.node_event_recv.recv().unwrap())
+    // }
     match c[0].packet_recv.recv() {
         Ok(p)=>{
             println!("{}",p);
         },
-        _=>{}
+        _=>{
+            println!("Oh oh");
+        }
     }
     
 
@@ -717,7 +821,7 @@ fn nack_receiving_main(){
             );
             println!("{}  {:?}", drone.id, drone.packet_send.clone());
 
-            drone.run();
+            wg_2024::drone::Drone::run(&mut drone);
         }));
     }
 

@@ -14,6 +14,8 @@ getdroned = { git  = "https://github.com/GetDroned/Drone.git" }
 d-r-o-n-e_drone = { git = "https://github.com/AP-2024-25-D-R-O-N-E/drone.git" }
 null-pointer-drone = { git = "https://github.com/The-Null-Pointer-Patrol/null-pointer-drone.git" }
 ap2024_unitn_cppenjoyers_drone = { git  = "https://github.com/Cpp-enjoyers/drone.git" }
-rustafarian-drone = { git = "https://github.com/Rustafarian-Unitn/rustafarian-drone.git" }
 rust-roveri = { git = "https://github.com/RustRoveri/rust-roveri.git" }
 rusteze_drone = { git = "https://github.com/Rusteze-AP/drone.git" }
+rustafarian-drone = { git = "https://github.com/Rustafarian-Unitn/rustafarian-drone.git" }
+log = "0.4.22"
+rand = "0.8.5"
