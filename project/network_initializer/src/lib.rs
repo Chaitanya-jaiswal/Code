@@ -1,6 +1,7 @@
 #![allow(dead_code)]
-use std::collections::{HashMap, HashSet, VecDeque};
-
+use std::{collections::{HashMap, HashSet, VecDeque}, fs, thread::{self, JoinHandle}};
+use crossbeam_channel::*;
+use rand::*;
 use toml::{self};
 use wg_2024::{
     config::Config,
@@ -9,56 +10,230 @@ use wg_2024::{
     network::NodeId,
     packet::{NodeType, Packet},
 };
+use client::*;
+use server::*;
+use controller::*;
 
-trait Factory <T: Drone>{
-    
-    fn build(
-        id: NodeId,
-        command_recv: crossbeam_channel::Receiver<DroneCommand>,
-        command_send: crossbeam_channel::Sender<DroneEvent>,
-        packet_recv: crossbeam_channel::Receiver<Packet>,
-        packet_send: HashMap<NodeId, crossbeam_channel::Sender<Packet>>,
-        pdr: f32,
-    ) -> T;
-    fn check_neighbors_id(current: NodeId, neighbors: &Vec<NodeId>) -> bool;
-    fn check_pdr(pdr: f32) -> bool;
-    fn check_initializer(path_to_file: &str) -> bool;
+fn parse_config(file: &str) -> Config {
+    let file_str = fs::read_to_string(file).unwrap();
+    toml::from_str(&file_str).unwrap()
 }
 
 
 
-enum DroneFactory
-{
-    BagelBomber,
-    Rustafarian,
-    DrOnes,
-    RustEze,
-    DRONE,
-    GetDroned,
-    NullPointerPatrol,
-    BetterCallDrone,
-    RustRoveri,
-    CppEnjoyers,
-}
-
-fn build<T>(
+fn build(
     id: NodeId,
-    command_recv: crossbeam_channel::Receiver<DroneCommand>,
-    command_send: crossbeam_channel::Sender<DroneEvent>,
+    controller_drone_recv: crossbeam_channel::Receiver<DroneCommand>,
+    node_event_send: crossbeam_channel::Sender<DroneEvent>,
     packet_recv: crossbeam_channel::Receiver<Packet>,
     packet_send: HashMap<NodeId, crossbeam_channel::Sender<Packet>>,
     pdr: f32,
-) -> T 
-where T: Drone{
-    T::new(
-        id,
-        command_send,
-        command_recv,
-        packet_recv,
-        packet_send,
-        pdr,
-    )
+    counters: &mut [i32]
+) {
+    let mut val = 0;
+    loop {
+        let mut rng = rand::thread_rng();
+        val = rng.gen::<usize>()%10;
+        if *counters.iter().min().unwrap() == counters[val]{
+            counters[val]+=1;
+            break;
+        } 
+    }
+
+
+    match val {
+        0=>{
+            println!("BagelBomber Id[{}]",id);
+            let mut drone = bagel_bomber::BagelBomber::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        1=>{
+            println!("BetteCallDrone Id[{}]",id);
+            let mut drone = drone_bettercalldrone::BetterCallDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        2=>{
+            println!("RustRoveri Id[{}]",id);
+            let mut drone = rust_roveri::drone::RustRoveri::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        3=>{
+            println!("GetDroned Id[{}]",id);
+            let mut drone = getdroned::GetDroned::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        4=>{
+            println!("C++Enjoyers Id[{}]",id);
+            let mut drone = ap2024_unitn_cppenjoyers_drone::CppEnjoyersDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        5=>{
+            println!("D.R.O.N.E Id[{}]",id);
+            let mut drone = d_r_o_n_e_drone::MyDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        6=>{
+            println!("NNP Id[{}]",id);
+            let mut drone = null_pointer_drone::MyDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        7=>{
+            println!("Rustafarian Id[{}]",id);
+            let mut drone = rustafarian_drone::RustafarianDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        8=>{
+            println!("DrOnes[{}]",id);
+            // // let mut drone = dr_ones::Drone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            // drone.run();
+        },
+        9=>{
+            println!("Rusteze Id[{}]",id);
+            let mut drone = rusteze_drone::RustezeDrone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
+        },
+        _=>{
+            println!("Error modulo");
+        }
+    }
+        
 }
+
+
+pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
+    let config = parse_config(path_to_file);
+    println!("{:?}", config.drone.clone());
+    println!("{:?}", config.client.clone());
+
+    let mut dd = HashMap::new();
+    let mut controller_drones = HashMap::new();
+    let (node_event_send, node_event_recv) = unbounded();
+    let mut cs_controller = HashMap::new();
+    let (cs_send, cs_recv)=unbounded::<NodeEvent>();
+
+    let mut packet_channels = HashMap::new();
+    for drone in config.drone.iter() {
+        packet_channels.insert(drone.id, unbounded());
+    }
+    for client in config.client.iter() {
+        packet_channels.insert(client.id, unbounded());
+    }
+    for server in config.server.iter() {
+        packet_channels.insert(server.id, unbounded());
+    }
+
+    let mut handles = Vec::new();
+    
+    let mut counters = [0 ; 10];
+    // let mut handles_c = Vec::new();
+    for drone in config.drone.into_iter() {
+        
+        // controller
+        let (controller_drone_send, controller_drone_recv) = unbounded();
+        controller_drones.insert(drone.id, controller_drone_send);
+        let node_event_send = node_event_send.clone();
+        // packet
+        let packet_recv = packet_channels[&drone.id].1.clone();
+        let packet_send = drone
+            .connected_node_ids
+            .clone()
+            .into_iter()
+            .map(|id| (id, packet_channels[&id].0.clone()))
+            .collect();
+        dd.insert(drone.id, drone.connected_node_ids.clone());
+        handles.push(thread::spawn(move|| {
+            
+            // let mut drone = null_pointer_drone::MyDrone::new(
+            //     drone.id,
+            //     node_event_send,
+            //     controller_drone_recv,
+            //     packet_recv,
+            //     packet_send,
+            //     drone.pdr,
+            // );
+            
+            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,&mut counters);
+            
+
+            // println!("{}  {:?}", drone.id, drone.packet_send.clone());
+
+            // wg_2024::drone::Drone::run(&mut drone);
+        }));
+    }
+
+    // let mut clients = Vec::new();
+    for drone in config.client.into_iter() {
+        // controller
+        let (controller_drone_send, controller_drone_recv) = unbounded::<NodeCommand>();
+        cs_controller.insert(drone.id, controller_drone_send);
+        let cs_send = cs_send.clone();
+        // packet
+        let packet_recv = packet_channels[&drone.id].1.clone();
+        let packet_send = drone
+            .connected_drone_ids
+            .into_iter()
+            .map(|id| (id, packet_channels[&id].0.clone()))
+            .collect();
+
+        
+        handles.push(thread::spawn(move|| {
+            let mut drone = Client {
+                id: drone.id,
+                controller_recv: controller_drone_recv,
+                controller_send: cs_send,
+                packet_recv,
+                packet_send,
+                flood_ids: HashSet::new(),
+            };
+            drone.run();
+        }));
+    }
+
+
+    // let mut servers = Vec::new();
+
+    for drone in config.server.into_iter() {
+        // controller
+        let (controller_drone_send, controller_drone_recv) = unbounded();
+        cs_controller.insert(drone.id, controller_drone_send);
+        let cs_send = cs_send.clone();
+        // packet
+        let packet_recv = packet_channels[&drone.id].1.clone();
+        let packet_send = drone
+            .connected_drone_ids
+            .into_iter()
+            .map(|id| (id, packet_channels[&id].0.clone()))
+            .collect();
+
+        handles.push(thread::spawn(move || {
+            let mut drone = Server {
+                id: drone.id,
+                controller_recv: controller_drone_recv,
+                controller_send: cs_send,
+                packet_recv,
+                packet_send,
+                flood_ids: HashSet::new(),
+            };
+            drone.run();
+        }));
+    }
+
+    handles.push(thread::spawn(move ||{
+        let mut controller = SimulationController {
+            droness: dd,
+            drones: controller_drones,
+            node_event_recv,
+            cli_ser_send: cs_controller,
+            cli_ser_recv: cs_recv,
+        };
+        // controller.run();
+    }));    
+
+    handles
+}
+
+
+
 
 fn check_neighbors_id(current: NodeId, neighbors: &Vec<NodeId>) -> bool {
     neighbors.into_iter().all(|f| *f != current)
@@ -127,6 +302,8 @@ fn check_initializer(path_to_file: &str) -> bool {
 
 #[cfg(test)]
 mod test {
+    use wg_2024::config;
+
     use super::*;
 
     #[test]
@@ -165,6 +342,76 @@ mod test {
             check_neighbors_id(1, &neighbors_not),
             false
         );
+    }
+
+    #[test]
+    fn test_init_diff(){
+        initialize("/home/stefano/Desktop/GoD/Code/Test/test_drone_2/config.toml");
+        assert_eq!(1,2);
+    }
+
+    #[test]
+    fn check_build(){
+        let config = parse_config("/home/stefano/Desktop/GoD/Code/Test/test_drone_2/config.toml");
+    let mut dd = HashMap::new();
+    let mut controller_drones = HashMap::new();
+    let (node_event_send, node_event_recv) = unbounded();
+    // let mut cs_controller = HashMap::new();
+    let (cs_send, cs_recv)=unbounded::<NodeEvent>();
+
+    let mut packet_channels = HashMap::new();
+    for drone in config.drone.iter() {
+        packet_channels.insert(drone.id, unbounded());
+    }
+    for client in config.client.iter() {
+        packet_channels.insert(client.id, unbounded());
+    }
+    for server in config.server.iter() {
+        packet_channels.insert(server.id, unbounded());
+    }
+
+    let mut handles = Vec::new();
+    
+    let mut counters = [0 ; 10];
+    // let mut handles_c = Vec::new();
+    for drone in config.drone.into_iter() {
+        
+        // controller
+        let (controller_drone_send, controller_drone_recv) = unbounded();
+        controller_drones.insert(drone.id, controller_drone_send);
+        let node_event_send = node_event_send.clone();
+        // packet
+        let packet_recv = packet_channels[&drone.id].1.clone();
+        let packet_send = drone
+            .connected_node_ids
+            .clone()
+            .into_iter()
+            .map(|id| (id, packet_channels[&id].0.clone()))
+            .collect();
+        dd.insert(drone.id, drone.connected_node_ids.clone());
+        handles.push(thread::spawn(move|| {
+            
+            // let mut drone = null_pointer_drone::MyDrone::new(
+            //     drone.id,
+            //     node_event_send,
+            //     controller_drone_recv,
+            //     packet_recv,
+            //     packet_send,
+            //     drone.pdr,
+            // );
+            
+            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,&mut counters);
+            
+            
+            // println!("{}  {:?}", drone.id, drone.packet_send.clone());
+            
+            // wg_2024::drone::Drone::run(&mut drone);
+        }));
+    }
+    while let Some(d) = handles.pop() {
+        d.join();
+    }
+    assert_eq!(1,2);
     }
 }
 

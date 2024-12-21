@@ -92,7 +92,6 @@ fn main() {
     }
 
     let mut handles = Vec::new();
-    
     // let mut handles_c = Vec::new();
     for drone in config.drone.into_iter() {
         let mut rng = rand::thread_rng();
@@ -103,82 +102,14 @@ fn main() {
         let node_event_send = node_event_send.clone();
         // packet
         let packet_recv = packet_channels[&drone.id].1.clone();
-        let packet_send = drone
+        let packet_send:HashMap<NodeId,Sender<Packet>> = drone
             .connected_node_ids
             .clone()
             .into_iter()
             .map(|id| (id, packet_channels[&id].0.clone()))
             .collect();
         dd.insert(drone.id, drone.connected_node_ids.clone());
-        handles.push(thread::spawn(move || {
-
-            
-            // let mut drone = null_pointer_drone::MyDrone::new(
-            //     drone.id,
-            //     node_event_send,
-            //     controller_drone_recv,
-            //     packet_recv,
-            //     packet_send,
-            //     drone.pdr,
-            // );
-            let val = 7;
-            match val {
-                0=>{
-                    println!("BagelBomber Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<bagel_bomber::BagelBomber>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                1=>{
-                    println!("BetteCallDrone Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<drone_bettercalldrone::BetterCallDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                2=>{
-                    println!("RustRoveri Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<rust_roveri::drone::RustRoveri>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                3=>{
-                    println!("GetDroned Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<getdroned::GetDroned>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                4=>{
-                    println!("C++Enjoyers Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<ap2024_unitn_cppenjoyers_drone::CppEnjoyersDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                5=>{
-                    println!("D.R.O.N.E Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<d_r_o_n_e_drone::MyDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                6=>{
-                    println!("NNP Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<null_pointer_drone::MyDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                7=>{
-                    println!("Rustafarian Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<rustafarian_drone::RustafarianDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                8=>{
-                    println!("GameOfDrones Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<game_of_drones::GameOfDrones>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                },
-                _=>{
-                    println!("BetterCallDrone2 Id[{}]",drone.id);
-                    let mut drone = build_on_imls::<drone_bettercalldrone::BetterCallDrone>(drone.id, node_event_send, controller_drone_recv, packet_recv, packet_send, drone.pdr);
-                    drone.run();
-                }
-            }
-
-            // println!("{}  {:?}", drone.id, drone.packet_send.clone());
-
-            // wg_2024::drone::Drone::run(&mut drone);
-        }));
+        handles = network_initializer::initialize("/home/stefano/Desktop/GoD/Code/Test/test_drone_1/config.toml");
     }
 
     // let mut clients = Vec::new();
