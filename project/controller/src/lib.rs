@@ -1,6 +1,7 @@
 use wg_2024::{packet::*,controller::*,network::*};
 use std::collections::{HashMap,HashSet};
 use crossbeam_channel::*;
+
 pub enum NodeCommand {
     SendPacket(Packet),
 }
@@ -14,7 +15,7 @@ pub struct SimulationController {
     pub drones: HashMap<NodeId, Sender<DroneCommand>>,
     pub node_event_recv: Receiver<DroneEvent>,
     pub cli_ser_send: HashMap<NodeId,Sender<NodeCommand>>,
-    pub cli_ser_recv: Receiver<NodeEvent>,
+    pub cli_ser_recv: Receiver<NodeEvent>
 }
 
 

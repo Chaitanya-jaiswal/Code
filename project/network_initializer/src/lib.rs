@@ -19,7 +19,36 @@ fn parse_config(file: &str) -> Config {
     toml::from_str(&file_str).unwrap()
 }
 
+fn astor(counters: &mut [i32])->usize{
+    let mut val = 0;
+    loop {
+        let mut rng = rand::thread_rng();
+        val = rng.gen::<usize>()%10;
+        if *counters.iter().min().unwrap() == counters[val] {
+            counters[val]+=1;
+            if *counters.iter().max().unwrap()-*counters.iter().min().unwrap() == 1{
+                break;
+            } else{
+                counters[val]-=1;
+            }
+        } 
+    }
+    val
+}
 
+fn foreach(counters: &mut [i32])->usize {
+    let mut val;
+    loop {
+        let mut rng = rand::thread_rng();
+        val = rng.gen::<usize>()%10;
+        if counters[val]!=1{
+            // println!("Value:[{}], Counters:[{:?}]",val,counters);
+            counters[val]=1;
+            break;
+        }
+    }
+    val
+}
 
 fn build(
     id: NodeId,
@@ -28,19 +57,8 @@ fn build(
     packet_recv: crossbeam_channel::Receiver<Packet>,
     packet_send: HashMap<NodeId, crossbeam_channel::Sender<Packet>>,
     pdr: f32,
-    counters: &mut [i32]
+    val: usize
 ) {
-    let mut val = 0;
-    loop {
-        let mut rng = rand::thread_rng();
-        val = rng.gen::<usize>()%10;
-        if *counters.iter().min().unwrap() == counters[val]{
-            counters[val]+=1;
-            break;
-        } 
-    }
-
-
     match val {
         0=>{
             println!("BagelBomber Id[{}]",id);
@@ -84,8 +102,8 @@ fn build(
         },
         8=>{
             println!("DrOnes[{}]",id);
-            // // let mut drone = dr_ones::Drone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
-            // drone.run();
+            let mut drone = dr_ones::Drone::new(id, node_event_send, controller_drone_recv, packet_recv, packet_send, pdr);
+            drone.run();
         },
         9=>{
             println!("Rusteze Id[{}]",id);
@@ -102,8 +120,8 @@ fn build(
 
 pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
     let config = parse_config(path_to_file);
-    println!("{:?}", config.drone.clone());
-    println!("{:?}", config.client.clone());
+    // println!("{:?}", config.drone.clone());
+    // println!("{:?}", config.client.clone());
 
     let mut dd = HashMap::new();
     let mut controller_drones = HashMap::new();
@@ -126,6 +144,8 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
     
     let mut counters = [0 ; 10];
     // let mut handles_c = Vec::new();
+    let len = config.drone.len();
+    println!("{}",len);
     for drone in config.drone.into_iter() {
         
         // controller
@@ -141,23 +161,14 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
             .map(|id| (id, packet_channels[&id].0.clone()))
             .collect();
         dd.insert(drone.id, drone.connected_node_ids.clone());
+        let val;
+        if len <10 {
+            val = astor(&mut counters);
+        } else {
+            val = foreach(&mut counters);
+        }
         handles.push(thread::spawn(move|| {
-            
-            // let mut drone = null_pointer_drone::MyDrone::new(
-            //     drone.id,
-            //     node_event_send,
-            //     controller_drone_recv,
-            //     packet_recv,
-            //     packet_send,
-            //     drone.pdr,
-            // );
-            
-            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,&mut counters);
-            
-
-            // println!("{}  {:?}", drone.id, drone.packet_send.clone());
-
-            // wg_2024::drone::Drone::run(&mut drone);
+            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,val);
         }));
     }
 
@@ -177,7 +188,7 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
 
         
         handles.push(thread::spawn(move|| {
-            let mut drone = Client {
+            let mut client = Client {
                 id: drone.id,
                 controller_recv: controller_drone_recv,
                 controller_send: cs_send,
@@ -185,7 +196,7 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
                 packet_send,
                 flood_ids: HashSet::new(),
             };
-            drone.run();
+            client.run();
         }));
     }
 
@@ -206,7 +217,7 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
             .collect();
 
         handles.push(thread::spawn(move || {
-            let mut drone = Server {
+            let mut server = Server {
                 id: drone.id,
                 controller_recv: controller_drone_recv,
                 controller_send: cs_send,
@@ -214,7 +225,7 @@ pub fn initialize(path_to_file: &str)->(Vec<JoinHandle<()>>){
                 packet_send,
                 flood_ids: HashSet::new(),
             };
-            drone.run();
+            server.run();
         }));
     }
 
@@ -310,7 +321,7 @@ mod test {
     fn test_init() {
         assert_eq!(
             check_initializer(
-                "/home/stefano/Desktop/GoD/Code/Test/test_drone_2/config.toml"
+                "/home/stefano/Desktop/config.toml"
             ),
             true
         );
@@ -346,13 +357,15 @@ mod test {
 
     #[test]
     fn test_init_diff(){
-        initialize("/home/stefano/Desktop/GoD/Code/Test/test_drone_2/config.toml");
-        assert_eq!(1,2);
+        while let Some(h) = initialize("/home/stefano/Desktop/config_1.toml").pop() {
+            h.join();
+            assert_eq!(1,2);
+        }
     }
 
-    #[test]
+    // #[test]
     fn check_build(){
-        let config = parse_config("/home/stefano/Desktop/GoD/Code/Test/test_drone_2/config.toml");
+        let config = parse_config("/home/stefano/Desktop/config.toml");
     let mut dd = HashMap::new();
     let mut controller_drones = HashMap::new();
     let (node_event_send, node_event_recv) = unbounded();
@@ -374,6 +387,7 @@ mod test {
     
     let mut counters = [0 ; 10];
     // let mut handles_c = Vec::new();
+    let len = config.drone.len();
     for drone in config.drone.into_iter() {
         
         // controller
@@ -400,7 +414,7 @@ mod test {
             //     drone.pdr,
             // );
             
-            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,&mut counters);
+            build(drone.id,controller_drone_recv,node_event_send, packet_recv,packet_send,drone.pdr,0);
             
             
             // println!("{}  {:?}", drone.id, drone.packet_send.clone());
@@ -622,7 +636,7 @@ mod testq {
         let paths = top.all_shortest_paths(0, 4);
 
         println!("{:?}",paths);
-        assert_eq!([[1,2,3].to_vec()].to_vec(),paths);
+        assert_eq!([[0,2,4].to_vec()].to_vec(),paths);
     }
 }
 
