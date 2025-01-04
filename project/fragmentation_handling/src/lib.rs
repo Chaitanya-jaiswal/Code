@@ -4,8 +4,6 @@ use io::Reader;
 use render::{render_resource::Extent3d, texture::ImageFormat};
 use wg_2024::{packet::*,network::*};
 use std::{collections::{HashMap,HashSet}, io::Cursor, mem::swap, ops::Deref, sync::Arc, thread, time::Duration};
-use crossbeam_channel::*;
-use controller::*;
 use bevy::*;
 use image::*;
 

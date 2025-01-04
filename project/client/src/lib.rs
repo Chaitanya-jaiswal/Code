@@ -1,6 +1,7 @@
 #![allow(dead_code,unused)]
 use audio::AudioSource;
 use codecs::png::PngDecoder;
+use fragmentation_handling::DefaultsRequest;
 use io::Reader;
 use render::{render_resource::Extent3d, texture::ImageFormat};
 use wg_2024::{packet::*,network::*};
@@ -9,7 +10,8 @@ use crossbeam_channel::*;
 use controller::*;
 use bevy::*;
 use image::*;
-pub mod fragment_handling;
+use fragmentation_handling::*;
+use topology::*;
 
 
 
@@ -50,7 +52,7 @@ pub mod fragment_handling;
 ///         We will have assets inside the git repo, for server holding, instead for client media save
 ///         we could have a tmp directory, that we could delete on app exit;
 ///     -...
-///   Inner Bckend:
+///   Inner Backend:
 ///     -Topology and source routing handling;
 ///         Refractor Topology divided from net_init
 ///     -Message handling;
@@ -66,6 +68,11 @@ pub mod fragment_handling;
 ///     -So a gui for the browser and one for the chattapp, that work with the api described prev.
 ///     
 
+#[derive(Clone)]
+pub enum ClientType {
+    ChatClient,
+    WebBrowser
+}
 // Client structure representing a client node in the network
 #[derive(Clone)]
 pub struct Client {
@@ -75,10 +82,13 @@ pub struct Client {
     pub packet_recv: Receiver<Packet>, // Receiver for incoming packets
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Map of packet senders for neighbors
     pub flood_ids: HashSet<u64>, // Set to track flood IDs for deduplication
+    pub client_topology: topology::Topology,
+    pub client_type: ClientType,
 }
 
 
 impl Client {
+
     pub fn run(&mut self) {
             loop {
                 select_biased! {
@@ -202,7 +212,110 @@ impl Client {
             }
         }
     
-    //fn login_to_chat_server(&self, server_id: NodeId)->Result<(_),&str>{
-    //}
+    fn send_flood_request(&self, session_id: u64, flood_id: u64)->Result<(()),&str> {
+        for neighbors in self.packet_send.clone(){
+            if let Err(res) = self.packet_send.get(&neighbors.0).unwrap().send(Packet::new_flood_request(SourceRoutingHeader::empty_route(), session_id, FloodRequest::new(flood_id,self.id))){
+                return Err("One or more neighbors was not found");
+            } 
+        }
+        Ok(())
+    }
+
+    fn send_flood_response(&self, session_id: u64, flood_id: u64, path_trace: Vec<(NodeId,NodeType)>)->Result<(()),&str>{
+        for neighbors in self.packet_send.clone(){
+            if neighbors.0!=path_trace.clone()[path_trace.clone().len()-2].0{
+                if let Err(res) = self.packet_send.get(&neighbors.0).unwrap().send(Packet::new_flood_response(SourceRoutingHeader::with_first_hop(path_trace.clone().into_iter().map(|f|f.0).rev().collect::<Vec<u8>>()), session_id, FloodResponse { flood_id, path_trace: path_trace.clone() })){
+                    return Err("One or more sender was corrupted");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn send_ack(&self, session_id: u64, first_hop: &u8, hops: Vec<u8>, fragment_index: u64)->Result<(()),&str>{
+        if let Some(sender) = self.packet_send.get(first_hop){
+            if let Err(e) = sender.send(Packet::new_ack(SourceRoutingHeader::with_first_hop(hops), session_id, fragment_index)){
+                return Err("Sender error");
+            }else {
+                return Ok(());
+            }
+        } else {
+            return Err("No sender found");
+        }
+    }
+
+    fn send_default_request(&self, server_id: NodeId, session_id: u64, request: DefaultsRequest)->Result<(()),&str>{
+        let paths = self.client_topology.shortest_path(self.id, server_id);
+        let bytes = <DefaultsRequest as fragmentation_handling::Fragmentation::<DefaultsRequest>>::fragment(request);
+        let fragments = fragmentation_handling::serialize(bytes);
+        let mut packets = Vec::new();
+        
+        if let Some(trace) = paths {
+            for fr in fragments {
+                packets.push(Packet::new_fragment(SourceRoutingHeader::with_first_hop(trace.clone()), session_id, fr));
+            }
+            if trace[0]==self.id {
+                for packet in packets {
+                    self.packet_send.get(&trace[1]).unwrap().send(packet.clone()).expect("Sender error");
+                }
+                Ok(())
+            } else {
+                for mut packet in packets {
+                    let mut vec = [self.id].to_vec();
+                    packet.routing_header.hops.append(&mut vec);
+                    packet.routing_header.hops = vec.clone();
+                    self.packet_send.get(&trace[1]).unwrap().send(packet.clone()).expect("Sender error");
+                }
+                Ok(())
+            }
+        } else {
+            Err("Error in source routing")
+        }
+    }
+
+    fn send_string_query(&self, server_id: NodeId, session_id: u64, query: String)->Result<(()),&str>{
+        let paths = self.client_topology.shortest_path(self.id, server_id);
+        let bytes = <String as fragmentation_handling::Fragmentation::<String>>::fragment(query);
+        let fragments = fragmentation_handling::serialize(bytes);
+        let mut packets = Vec::new();
+        
+        if let Some(trace) = paths {
+            for fr in fragments {
+                packets.push(Packet::new_fragment(SourceRoutingHeader::with_first_hop(trace.clone()), session_id, fr));
+            }
+            if trace[0]==self.id {
+                for packet in packets {
+                    self.packet_send.get(&trace[1]).unwrap().send(packet.clone()).expect("Sender error");
+                }
+                Ok(())
+            } else {
+                for mut packet in packets {
+                    let mut vec = [self.id].to_vec();
+                    packet.routing_header.hops.append(&mut vec);
+                    packet.routing_header.hops = vec.clone();
+                    self.packet_send.get(&trace[1]).unwrap().send(packet.clone()).expect("Sender error");
+                }
+                Ok(())
+            }
+        } else {
+            Err("Error in source routing")
+        }
+    }
+
+    fn send_generic_fragment(&self, server_id: NodeId, session_id: u64, fragment: Fragment)->Result<(()),&str>{
+        if let Some(trace) = self.client_topology.shortest_path(self.id, server_id) {
+            if let Some(sender) = self.packet_send.get(&trace[0]) {
+                if let Ok(_) = sender.send(Packet::new_fragment(SourceRoutingHeader::with_first_hop(trace.clone()), session_id, fragment)){
+                    return Ok(());
+                } else {
+                    return Err("Error in sender");
+                }
+            } else {
+                return Err("Sender not found");
+            }
+        } else {
+            return Err("No path found");
+        }
+    }
 
 }
