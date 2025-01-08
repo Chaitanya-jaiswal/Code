@@ -8,7 +8,20 @@ use bevy::*;
 use image::*;
 
 
+///TODO::
+/// -Specific comments on what the code does
+/// -impl Fragmentation and Assembler for ContentRequest and ChatRequest
+/// -Message structure with generic type T: Fragmentation + Assembler ??
+/// -Review on auxiliary fuctions
+
+
+
+
 // Trait to handle message fragmentation
+//      Every impl Fragemntation has a diff recognition bit, that is the first element
+//      of the vector of the message's bytes. It will be used then to be the first fragment
+//      so that when reconstructing a message the types can be inferred.
+
 pub trait Fragmentation<T> {
     fn fragment(message: T) -> Vec<u8>; // Fragment a message into bytes
 }
@@ -25,21 +38,19 @@ fn sort_by_fragment_index(fragments: &mut Vec<Fragment>) {
             }
         }
     }
-    // println!("{:?}", fragments); // Debug output for sorted fragments
 }
 
 // Function to check if all fragments are present
 fn check_wholeness(fragments: &mut Vec<Fragment>) -> bool {
     let size = fragments[0].total_n_fragments; // Total number of fragments
     let mut count = 0;
-    for i in 0..size {
+    for i in 1..size+1 {
         count += i as u64; // Sum of expected fragment indices
     }
     let mut check_count = 0;
     for fr in fragments {
         check_count += fr.fragment_index; // Sum of actual fragment indices
     }
-    // println!("{}  {}", check_count, count); // Debug output for counts
     check_count == count // Verify completeness
 }
 
@@ -51,7 +62,9 @@ pub trait Assembler<T: Fragmentation<T>> {
 // Implementation of Fragmentation for String
 impl Fragmentation<String> for String {
     fn fragment(message: String) -> Vec<u8> {
-        message.into_bytes() // Convert the string into bytes
+        let mut vec = [1].to_vec();
+        vec.append(&mut message.into_bytes()); // Convert the string into bytes
+        vec
     }
 }
 
@@ -64,8 +77,10 @@ impl Assembler<String> for String {
         } else {
             let mut vec = Vec::new();
             for fr in fragments {
-                for i in 0..fr.length {
-                    vec.push(fr.data[i as usize]); // Collect fragment data
+                if fr.fragment_index != 1 { 
+                    for i in 0..fr.length {
+                        vec.push(fr.data[i as usize]); // Collect fragment data
+                    }
                 }
             }
             Ok(String::from_utf8(vec).expect("Something is wrong with the assembler")) // Reconstruct string
@@ -76,7 +91,9 @@ impl Assembler<String> for String {
 // Implementation of Fragmentation for Bevy's AudioSource
 impl Fragmentation<bevy::audio::AudioSource> for AudioSource {
     fn fragment(message: bevy::audio::AudioSource) -> Vec<u8> {
-        message.bytes.to_vec() // Extract bytes from AudioSource
+        let mut vec = [2].to_vec();
+        vec.append(&mut message.bytes.to_vec()); // Extract bytes from AudioSource
+        vec
     }
 }
 
@@ -89,8 +106,10 @@ impl Assembler<bevy::audio::AudioSource> for AudioSource {
         } else {
             let mut vec = Vec::new();
             for fr in fragments {
-                for i in 0..fr.length {
-                    vec.push(fr.data[i as usize]); // Collect fragment data
+                if fr.fragment_index != 1 {
+                    for i in 0..fr.length {
+                        vec.push(fr.data[i as usize]); // Collect fragment data
+                    }
                 }
             }
             Ok(AudioSource { bytes: Arc::from(vec) }) // Create new AudioSource
@@ -98,12 +117,14 @@ impl Assembler<bevy::audio::AudioSource> for AudioSource {
     }
 }
 
-// Implementation of Fragmentation for Bevy's Image
+// Implementation of Fragmentatio for images(for now just png)
 impl Fragmentation<image::DynamicImage> for image::DynamicImage {
     fn fragment(message: image::DynamicImage) -> Vec<u8> {
+        let mut vec = [3].to_vec();
         let mut data = Vec::new();
         message.write_to(&mut Cursor::new(&mut data), image::ImageFormat::Png).unwrap(); // Extract data from Image
-        data
+        vec.append(&mut data);
+        vec
     }
 }
 
@@ -121,12 +142,9 @@ impl Assembler<image::DynamicImage> for image::DynamicImage {
         // Combine data from fragments
         let mut combined_data = Vec::new();
         for fragment in fragments.iter() {
-            combined_data.extend_from_slice(&fragment.data[..fragment.length as usize]);
-        }
-
-        // Split the combined data into image bytes and dimensions
-        if combined_data.len() < 2 {
-            return Err("Insufficient data to reconstruct the image.".to_string());
+            if fragment.fragment_index != 1 {
+                combined_data.extend_from_slice(&fragment.data[..fragment.length as usize]);
+            }
         }
 
         let reader = PngDecoder::new(Cursor::new(combined_data)).expect("Error in decoder");
@@ -140,96 +158,40 @@ impl Assembler<image::DynamicImage> for image::DynamicImage {
     }
 }
 
-
-// Helper function to convert a slice to a fixed-size array
-fn slice_to_array(slice: &[u8], len: usize) -> [u8; 128] {
-    let mut res: [u8; 128] = [0; 128];
-    for i in 0..len {
-        res[i] = slice[i];
-    }
-    res
-}
-
-// Serialize data into fragments
-pub fn serialize(data: Vec<u8>) -> Vec<Fragment> {
-    let len = data.len();
-    let mut iter = data.chunks(128); // Split data into chunks of 128 bytes
-    let mut vec = Vec::new();
-    let mut size = (len / 128) as u64;
-    let last = (len % 128) as u64;
-    if last != 0 {
-        size += 1; // Adjust total size for remaining data
-    }
-    let mut i = 1;
-    let mut j = 128;
-    if len > 128 {
-        loop {
-            if j < len {
-                let fragment_data = iter.next().unwrap();
-                vec.push(Fragment {
-                    fragment_index: i,
-                    total_n_fragments: size,
-                    data: slice_to_array(fragment_data, fragment_data.len()),
-                    length: fragment_data.len() as u8,
-                });
-                i += 1;
-                j += 128;
-            } else {
-                let fragment_data = iter.next().unwrap();
-                vec.push(Fragment {
-                    fragment_index: i,
-                    total_n_fragments: size,
-                    data: slice_to_array(fragment_data, fragment_data.len()),
-                    length: fragment_data.len() as u8,
-                });
-                break;
-            }
-        }
-    } else {
-        vec.push(Fragment {
-            fragment_index: i,
-            total_n_fragments: size,
-            data: slice_to_array(data.as_slice(), last as usize),
-            length: last as u8,
-        });
-    }
-    vec
-}
-
-// Unit tests for the implemented functionality
+#[derive(Debug,PartialEq, Eq, Clone, Copy)]
 pub enum DefaultsRequest {
-    LOGIN,
-    REGISTER,
-    GETALLTEXT,
-    GETALLMEDIALINKS,
-    SETUNAVAILABLE,
-    SETAVAILABLE,
-    GETALLAVAILABLE,
+    LOGIN,              //client logs to chat server
+    REGISTER,           //client register to chat server
+    GETALLTEXT,         //request all text file inside of content server
+    GETALLMEDIALINKS,   //request all media links insede of content server
+    SETUNAVAILABLE,     //set client unavailable for chatting inside of chat server
+    SETAVAILABLE,       //set client available for chatting inside of chat server
+    GETALLAVAILABLE,    //get all client available for chatting
 }
 
 impl Fragmentation<DefaultsRequest> for DefaultsRequest{
     fn fragment(message: DefaultsRequest) -> Vec<u8> {
         match message {
             DefaultsRequest::LOGIN => {
-                vec![0]
+                vec![4,0]
             },
             DefaultsRequest::REGISTER => {
-                vec![1]
+                vec![4,1]
             },
             DefaultsRequest::GETALLTEXT => {
-                vec![2]
+                vec![4,2]
             },
             DefaultsRequest::GETALLMEDIALINKS => {
-                vec![3]
+                vec![4,3]
             },
             DefaultsRequest::GETALLAVAILABLE => {
-                vec![4]
+                vec![4,4]
             },
             DefaultsRequest::SETAVAILABLE => {
-                vec![5]
+                vec![4,5]
             },
             DefaultsRequest::SETUNAVAILABLE => {
-                vec![6]
+                vec![4,6]
             }
         }
     }
@@ -237,10 +199,11 @@ impl Fragmentation<DefaultsRequest> for DefaultsRequest{
 
 impl Assembler<DefaultsRequest> for DefaultsRequest {
     fn assemble(fragments: &mut Vec<Fragment>) -> Result<DefaultsRequest, String> {
-        if fragments.len()!=1{
-            Err("Lenght of default requests must be 1".to_string())
+        if fragments.len()>2{
+            Err("Lenght of default requests must be 2".to_string())
         } else {
-            match fragments[0].data[0] {
+            //match the second fragment first bit for recognition.
+            match fragments[1].data[0] {
                 0=>{
                     Ok(DefaultsRequest::LOGIN)
                 },
@@ -271,6 +234,81 @@ impl Assembler<DefaultsRequest> for DefaultsRequest {
 }
 
 
+pub enum ContentRequest {
+    GETTEXT(String),    //get specific text file, String is the path inside the assets directory
+    GETMEDIA(String),   //get specific media, String is the path inside of the assets directory
+}
+
+
+pub enum ChatRequests<T: Fragmentation<T>+Assembler<T>> {
+    SENDTO(NodeId,T),  //send to specific client to simulate chat behaviour
+}
+//Do we need content and chat responses?
+//Or do we use session id for responding ?
+
+fn slice_to_array(slice: &[u8], len: usize) -> [u8; 128] {
+    let mut res: [u8; 128] = [0; 128];
+    for i in 0..len {
+        res[i] = slice[i];
+    }
+    res
+}
+
+// Serialize data into fragments
+pub fn serialize(datas: Vec<u8>) -> Vec<Fragment> {
+    let (f0, data) = datas.split_at(1);
+    let len = data.len();
+    let mut iter = data.chunks(128); // Split data into chunks of 128 bytes
+    let mut vec = Vec::new();
+    let mut size = ((len / 128)+1) as u64;
+    let last = (len % 128) as u64;
+    if last != 0 {
+        size += 1; // Adjust total size for remaining data
+    }
+
+    let frag_0 = Fragment{
+        fragment_index:1,
+        total_n_fragments:size,
+        data: slice_to_array(f0,1),
+        length: 1
+    };
+    vec.push(frag_0);
+    let mut i = 2;
+    let mut j = 128;
+    if len > 128 {
+        loop {
+            if j < len {
+                let fragment_data = iter.next().unwrap();
+                vec.push(Fragment {
+                    fragment_index: i,
+                    total_n_fragments: size,
+                    data: slice_to_array(fragment_data, fragment_data.len()),
+                    length: fragment_data.len() as u8,
+                });
+                i += 1;
+                j += 128;
+            } else {
+                let fragment_data = iter.next().unwrap();
+                vec.push(Fragment {
+                    fragment_index: i,
+                    total_n_fragments: size,
+                    data: slice_to_array(fragment_data, fragment_data.len()),
+                    length: fragment_data.len() as u8,
+                });
+                break;
+            }
+        }
+    } else {
+        vec.push(Fragment {
+            fragment_index: i,
+            total_n_fragments: size,
+            data: slice_to_array(data, last as usize),
+            length: last as u8,
+        });
+    }
+    vec
+}
+
 #[cfg(test)]
 mod test {
 
@@ -281,7 +319,7 @@ mod test {
     fn test1() {
         let string = "hello".to_string();
         let ser = <String as Fragmentation<String>>::fragment(string);
-        let ast = [104, 101, 108, 108, 111].to_vec();
+        let ast = [1,104, 101, 108, 108, 111].to_vec();
         eprintln!("{:?}\n{:?}", ast, ser);
         assert_eq!(ast, ser);
     }
@@ -300,8 +338,8 @@ mod test {
         ast[4] = 111;
 
         let fr = Fragment {
-            fragment_index: 1,
-            total_n_fragments: 1,
+            fragment_index: 2,
+            total_n_fragments: 2,
             length: 5,
             data: ast,
         };
@@ -309,10 +347,12 @@ mod test {
         eprintln!("{:?}\n{:?}", fr, ser);
 
         for f in ser {
-            assert_eq!(f.data, fr.data);
-            assert_eq!(f.fragment_index, fr.fragment_index);
-            assert_eq!(f.length, fr.length);
-            assert_eq!(f.total_n_fragments, fr.total_n_fragments);
+            if f.fragment_index!=1 {
+                assert_eq!(f.data, fr.data);
+                assert_eq!(f.fragment_index, fr.fragment_index);
+                assert_eq!(f.length, fr.length);
+                assert_eq!(f.total_n_fragments, fr.total_n_fragments);
+            }
         }
     }
 
@@ -333,10 +373,11 @@ mod test {
     // Test sorting of fragments by index
     #[test]
     fn test4() {
-        let fr1 = Fragment::from_string(1, 2, "Hello".to_string());
-        let fr2 = Fragment::from_string(2, 2, " World!\n".to_string());
-        let fr3 = Fragment::from_string(3, 2, "Modefeckers!".to_string());
-        let mut test_sub = vec![fr2, fr3, fr1];
+        let fr0 = Fragment{fragment_index:1,total_n_fragments:4,length:128,data:[0;128]};
+        let fr1 = Fragment::from_string(2, 4, "Hello".to_string());
+        let fr2 = Fragment::from_string(3, 4, " World!\n".to_string());
+        let fr3 = Fragment::from_string(4, 4, "Modefeckers!".to_string());
+        let mut test_sub = vec![fr2, fr3, fr1, fr0];
 
         sort_by_fragment_index(&mut test_sub);
         for i in 1..test_sub.len() + 1 {
@@ -357,5 +398,23 @@ mod test {
             println!("{:?}",assembly.clone().err());
         }
         assert_eq!(img,assembly.clone().ok().unwrap());
+    }
+
+    #[test]
+    fn test6 () {
+        let def_req = DefaultsRequest::LOGIN;
+        let def_bytes = <DefaultsRequest as Fragmentation<DefaultsRequest>>::fragment(def_req);
+        let mut def_frag = serialize(def_bytes);
+        if def_frag[0].fragment_index == 1 && def_frag[0].data[0] == 4 {
+            let assembly = <DefaultsRequest as Assembler<DefaultsRequest>>::assemble(&mut def_frag);
+            if let Ok(res) = assembly.clone()  {
+                println!("{:?}", res);
+            } else {
+                eprintln!("Something went wrong {:?}",assembly.clone().err());
+            }
+            assert_eq!(assembly.clone().ok().unwrap(),def_req);
+        } else {
+            eprintln!("Fragmentation went very wrong");
+        }
     }
 }
