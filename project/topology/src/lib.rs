@@ -17,7 +17,11 @@ pub struct Node {
     // pdr: f32, //only if the type is drone.
     pub adjacents: Vec<(NodeId,NodeType)>,
 }
+pub enum  ServerType{
+    ChatServer,
+    WebServer
 
+}
 impl Node {
     pub fn new(value: NodeId, node_type: NodeType)->Self{
         Self { value , node_type, adjacents: Vec::new() }
