@@ -19,5 +19,5 @@ bytes = "1"
 form_urlencoded = "1"
 http = "1"
 futures-util = { version = "0.3", default-features = false }
-
+hyper-router = "^0.5"
 
