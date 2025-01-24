@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, fs, thread::{self, JoinHandle}};
 
 use rand::*;
-
+use serde::{Deserialize, Serialize};
 use wg_2024::{
     config::Config,
     controller::{DroneCommand, DroneEvent},
@@ -17,6 +17,7 @@ pub struct Node {
     // pdr: f32, //only if the type is drone.
     pub adjacents: Vec<(NodeId,NodeType)>,
 }
+#[derive(Debug, Clone,Serialize,Deserialize)]
 pub enum  ServerType{
     ChatServer,
     WebServer
