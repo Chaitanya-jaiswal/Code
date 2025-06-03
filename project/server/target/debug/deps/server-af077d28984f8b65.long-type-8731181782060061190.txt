@@ -1,0 +1,1 @@
+service::util::ServiceFn<for<'a> fn(&'a mut web_server::server::WebServer, <web_server::server::WebServer as Server>::RequestType) -> <web_server::server::WebServer as Server>::ResponseType {<web_server::server::WebServer as Server>::handle_request}, hyper::body::Incoming>

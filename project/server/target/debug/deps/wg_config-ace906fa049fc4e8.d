@@ -1,0 +1,6 @@
+C:\Users\chait\Code\project\server\target\debug\deps\libwg_config-ace906fa049fc4e8.rmeta: C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\lib.rs C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\config.rs
+
+C:\Users\chait\Code\project\server\target\debug\deps\wg_config-ace906fa049fc4e8.d: C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\lib.rs C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\config.rs
+
+C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\lib.rs:
+C:\Users\chait\.cargo\git\checkouts\wgl_repo_2024-ef39dad5e5a1b705\07520df\crates\wg_config\src\config.rs:
